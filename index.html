@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Luz</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+</head>
+<body>
+    <h1>Controle de Luz</h1>
+    <button id="ligar">Ligar Luz</button>
+    <button id="desligar">Desligar Luz</button>
+
+    <script>
+        // Configurações do MQTT
+        const broker = "ws://BROKER_MQTT:9001"; // Use ws:// para WebSocket
+        const topic = "casa/luz";
+
+        // Cria um cliente MQTT
+        const client = new Paho.MQTT.Client(broker, "clientId");
+
+        // Conecta ao broker
+        client.connect({
+            onSuccess: () => {
+                console.log("Conectado ao broker MQTT");
+            },
+            onFailure: (err) => {
+                console.error("Falha ao conectar ao broker MQTT", err);
+            }
+        });
+
+        // Função para enviar mensagens MQTT
+        function sendMessage(message) {
+            const mqttMessage = new Paho.MQTT.Message(message);
+            mqttMessage.destinationName = topic;
+            client.send(mqttMessage);
+        }
+
+        // Eventos dos botões
+        document.getElementById("ligar").addEventListener("click", () => {
+            sendMessage("ligar");
+        });
+
+        document.getElementById("desligar").addEventListener("click", () => {
+            sendMessage("desligar");
+        });
+    </script>
+</body>
+</html>
