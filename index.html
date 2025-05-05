@@ -1,49 +1,138 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controle de Luz</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+  <title>Controle de Iluminação/Portão via MQTT</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 50px;
+    }
+    h1 {
+      color: #333;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 10px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background-color: #007BFF;
+      color: white;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .status {
+      margin-top: 20px;
+      font-size: 18px;
+    }
+    .loading {
+      display: none;
+      margin-top: 20px;
+      font-size: 18px;
+      color: #007BFF;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <script>
+    const clientId = "web_" + parseInt(Math.random() * 100000);
+    const host = "192.168.5.23"; // IP do broker Mosquitto
+    const port = 9001; // Porta WebSocket
+    const topicPortao = "casa/portao"; // Tópico para o portão
+    const topicLuz = "casa/luz"; // Tópico para a luz
+    
+    let client = null;
+
+    function connect() {
+      client = new Paho.MQTT.Client(host, port, clientId);
+      
+      client.onConnectionLost = onConnectionLost;
+      client.onMessageArrived = onMessageArrived;
+      
+      client.connect({
+        onSuccess: onConnect,
+        onFailure: onFailure,
+        useSSL: false
+      });
+    }
+
+    function onConnect() {
+      console.log("Conectado ao broker MQTT");
+      client.subscribe(topicPortao);
+      client.subscribe(topicLuz);
+      updateStatus("Conectado ao broker", "green");
+    }
+
+    function onFailure(response) {
+      console.log("Falha na conexão: " + response.errorMessage);
+      updateStatus("Falha na conexão: " + response.errorMessage, "red");
+      setTimeout(connect, 5000);
+    }
+
+    function onConnectionLost(responseObject) {
+      if (responseObject.errorCode !== 0) {
+        console.log("Conexão perdida: " + responseObject.errorMessage);
+        updateStatus("Conexão perdida", "red");
+        setTimeout(connect, 5000);
+      }
+    }
+
+    function onMessageArrived(message) {
+      console.log("Mensagem recebida no tópico " + message.destinationName + ": " + message.payloadString);
+      const rele = message.destinationName === topicPortao ? 1 : 2;
+      const estado = message.payloadString === "ligar" ? 1 : 0;
+      
+      const statusElement = document.getElementById(`status${rele}`);
+      statusElement.textContent = `Rele ${rele} ${estado == 1 ? 'ligado' : 'desligado'}`;
+      statusElement.style.color = estado == 1 ? 'green' : 'red';
+    }
+
+    function updateStatus(text, color) {
+      const statusElement = document.getElementById("connectionStatus");
+      statusElement.textContent = text;
+      statusElement.style.color = color;
+    }
+
+    function enviarComando(rele, estado) {
+      if (!client || !client.isConnected()) {
+        alert("Não conectado ao broker MQTT");
+        return;
+      }
+
+      const topic = rele === 1 ? topicPortao : topicLuz;
+      const message = new Paho.MQTT.Message(estado === 1 ? "ligar" : "desligar");
+      message.destinationName = topic;
+      message.qos = 1;
+      
+      document.getElementById(`loading${rele}`).style.display = "block";
+      
+      client.send(message);
+      
+      document.getElementById(`loading${rele}`).style.display = "none";
+    }
+
+    // Conectar quando a página carregar
+    window.onload = connect;
+  </script>
 </head>
 <body>
-    <h1>Controle de Luz</h1>
-    <button id="ligar">Ligar Luz</button>
-    <button id="desligar">Desligar Luz</button>
+  <h1>Controle Iluminação Portão via MQTT</h1>
+  <div id="connectionStatus" class="status">Conectando ao broker...</div>
+  
+  <div>
+    <button onclick="enviarComando(1, 1)">Abrir Portão</button>
+    <button onclick="enviarComando(1, 0)">Fechar Portão</button>
+    <div id="status1" class="status">Estado do Portão: Desconhecido</div>
+    <div id="loading1" class="loading">Carregando...</div>
+  </div>
 
-    <script>
-        // Configurações do MQTT
-        const broker = "ws://192.168.5.22:9001"; // Use ws:// para WebSocket
-        const topic = "casa/luz";
-
-        // Cria um cliente MQTT
-        const client = new Paho.MQTT.Client(broker, "clientId");
-
-        // Conecta ao broker
-        client.connect({
-            onSuccess: () => {
-                console.log("Conectado ao broker MQTT");
-            },
-            onFailure: (err) => {
-                console.error("Falha ao conectar ao broker MQTT", err);
-            }
-        });
-
-        // Função para enviar mensagens MQTT
-        function sendMessage(message) {
-            const mqttMessage = new Paho.MQTT.Message(message);
-            mqttMessage.destinationName = topic;
-            client.send(mqttMessage);
-        }
-
-        // Eventos dos botões
-        document.getElementById("ligar").addEventListener("click", () => {
-            sendMessage("ligar");
-        });
-
-        document.getElementById("desligar").addEventListener("click", () => {
-            sendMessage("desligar");
-        });
-    </script>
+  <div>
+    <button onclick="enviarComando(2, 1)">Ligar Luz Portão</button>
+    <button onclick="enviarComando(2, 0)">Desligar Luz Portão</button>
+    <div id="status2" class="status">Estado da Luz: Desconhecido</div>
+    <div id="loading2" class="loading">Carregando...</div>
+  </div>
 </body>
 </html>
