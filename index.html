@@ -1,138 +1,157 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Controle de Iluminação/Portão via MQTT</title>
+  <title>Controle de Iluminação MQTT</title>
   <style>
     body {
       font-family: Arial, sans-serif;
-      text-align: center;
-      margin-top: 50px;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
     }
     h1 {
-      color: #333;
+      color: #2c3e50;
+      text-align: center;
     }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-      margin: 10px;
-      cursor: pointer;
-      border: none;
-      border-radius: 5px;
-      background-color: #007BFF;
+    .btn-container {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 30px;
+    }
+    .btn-ligar {
+      background-color: #2ecc71;
       color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
     }
-    button:hover {
-      background-color: #0056b3;
+    .btn-desligar {
+      background-color: #e74c3c;
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .btn-ligar:hover {
+      background-color: #27ae60;
+    }
+    .btn-desligar:hover {
+      background-color: #c0392b;
     }
     .status {
+      text-align: center;
       margin-top: 20px;
-      font-size: 18px;
-    }
-    .loading {
-      display: none;
-      margin-top: 20px;
-      font-size: 18px;
-      color: #007BFF;
+      font-weight: bold;
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
   <script>
-    const clientId = "web_" + parseInt(Math.random() * 100000);
-    const host = "192.168.5.23"; // IP do broker Mosquitto
-    const port = 9001; // Porta WebSocket
-    const topicPortao = "casa/portao"; // Tópico para o portão
-    const topicLuz = "casa/luz"; // Tópico para a luz
+    // Configurações MQTT
+    const brokerHost = "IP_DO_SEU_BROKER"; // Substitua pelo IP do seu broker
+    const brokerPort = 9001; // Porta WebSocket
+    const clientId = "web_" + Math.random().toString(16).substr(2, 8);
     
     let client = null;
+    const topicBase = "casa/iluminacao/";
 
-    function connect() {
-      client = new Paho.MQTT.Client(host, port, clientId);
+    function connectToBroker() {
+      client = new Paho.MQTT.Client(brokerHost, brokerPort, clientId);
       
       client.onConnectionLost = onConnectionLost;
       client.onMessageArrived = onMessageArrived;
       
-      client.connect({
+      const options = {
         onSuccess: onConnect,
-        onFailure: onFailure,
+        onFailure: onConnectionFailed,
         useSSL: false
-      });
+      };
+      
+      client.connect(options);
     }
 
     function onConnect() {
       console.log("Conectado ao broker MQTT");
-      client.subscribe(topicPortao);
-      client.subscribe(topicLuz);
       updateStatus("Conectado ao broker", "green");
+      
+      // Inscreva-se nos tópicos de status se necessário
+      for (let i = 1; i <= 8; i++) {
+        client.subscribe(topicBase + "status/" + i, {qos: 1});
+      }
     }
 
-    function onFailure(response) {
+    function onConnectionFailed(response) {
       console.log("Falha na conexão: " + response.errorMessage);
-      updateStatus("Falha na conexão: " + response.errorMessage, "red");
-      setTimeout(connect, 5000);
+      updateStatus("Falha na conexão", "red");
+      setTimeout(connectToBroker, 5000);
     }
 
     function onConnectionLost(responseObject) {
       if (responseObject.errorCode !== 0) {
         console.log("Conexão perdida: " + responseObject.errorMessage);
-        updateStatus("Conexão perdida", "red");
-        setTimeout(connect, 5000);
+        updateStatus("Desconectado", "orange");
+        setTimeout(connectToBroker, 5000);
       }
     }
 
     function onMessageArrived(message) {
-      console.log("Mensagem recebida no tópico " + message.destinationName + ": " + message.payloadString);
-      const rele = message.destinationName === topicPortao ? 1 : 2;
-      const estado = message.payloadString === "ligar" ? 1 : 0;
-      
-      const statusElement = document.getElementById(`status${rele}`);
-      statusElement.textContent = `Rele ${rele} ${estado == 1 ? 'ligado' : 'desligado'}`;
-      statusElement.style.color = estado == 1 ? 'green' : 'red';
+      console.log("Mensagem recebida: " + message.destinationName + " - " + message.payloadString);
+      // Aqui você pode atualizar a interface com o status dos relés
     }
 
     function updateStatus(text, color) {
-      const statusElement = document.getElementById("connectionStatus");
-      statusElement.textContent = text;
-      statusElement.style.color = color;
+      document.getElementById("status").textContent = text;
+      document.getElementById("status").style.color = color;
     }
 
-    function enviarComando(rele, estado) {
+    function sendCommand(rele, action) {
       if (!client || !client.isConnected()) {
         alert("Não conectado ao broker MQTT");
         return;
       }
 
-      const topic = rele === 1 ? topicPortao : topicLuz;
-      const message = new Paho.MQTT.Message(estado === 1 ? "ligar" : "desligar");
+      const topic = topicBase + "comando/" + rele;
+      const message = new Paho.MQTT.Message(action);
       message.destinationName = topic;
       message.qos = 1;
       
-      document.getElementById(`loading${rele}`).style.display = "block";
-      
       client.send(message);
-      
-      document.getElementById(`loading${rele}`).style.display = "none";
+      console.log("Comando enviado: " + topic + " - " + action);
     }
 
     // Conectar quando a página carregar
-    window.onload = connect;
+    window.onload = connectToBroker;
   </script>
 </head>
 <body>
-  <h1>Controle Iluminação Portão via MQTT</h1>
-  <div id="connectionStatus" class="status">Conectando ao broker...</div>
+  <h1>Controle de Iluminação MQTT</h1>
   
-  <div>
-    <button onclick="enviarComando(1, 1)">Abrir Portão</button>
-    <button onclick="enviarComando(1, 0)">Fechar Portão</button>
-    <div id="status1" class="status">Estado do Portão: Desconhecido</div>
-    <div id="loading1" class="loading">Carregando...</div>
+  <div class="btn-container">
+    <!-- Botões de Ligar -->
+    <button class="btn-ligar" onclick="sendCommand(1, 'ligar')">Ligar Luz 1</button>
+    <button class="btn-ligar" onclick="sendCommand(2, 'ligar')">Ligar Luz 2</button>
+    <button class="btn-ligar" onclick="sendCommand(3, 'ligar')">Ligar Luz 3</button>
+    <button class="btn-ligar" onclick="sendCommand(4, 'ligar')">Ligar Luz 4</button>
+    <button class="btn-ligar" onclick="sendCommand(5, 'ligar')">Ligar Luz 5</button>
+    <button class="btn-ligar" onclick="sendCommand(6, 'ligar')">Ligar Luz 6</button>
+    <button class="btn-ligar" onclick="sendCommand(7, 'ligar')">Ligar Luz 7</button>
+    <button class="btn-ligar" onclick="sendCommand(8, 'ligar')">Ligar Luz 8</button>
+    
+    <!-- Botões de Desligar -->
+    <button class="btn-desligar" onclick="sendCommand(1, 'desligar')">Desligar Luz 1</button>
+    <button class="btn-desligar" onclick="sendCommand(2, 'desligar')">Desligar Luz 2</button>
+    <button class="btn-desligar" onclick="sendCommand(3, 'desligar')">Desligar Luz 3</button>
+    <button class="btn-desligar" onclick="sendCommand(4, 'desligar')">Desligar Luz 4</button>
+    <button class="btn-desligar" onclick="sendCommand(5, 'desligar')">Desligar Luz 5</button>
+    <button class="btn-desligar" onclick="sendCommand(6, 'desligar')">Desligar Luz 6</button>
+    <button class="btn-desligar" onclick="sendCommand(7, 'desligar')">Desligar Luz 7</button>
+    <button class="btn-desligar" onclick="sendCommand(8, 'desligar')">Desligar Luz 8</button>
   </div>
-
-  <div>
-    <button onclick="enviarComando(2, 1)">Ligar Luz Portão</button>
-    <button onclick="enviarComando(2, 0)">Desligar Luz Portão</button>
-    <div id="status2" class="status">Estado da Luz: Desconhecido</div>
-    <div id="loading2" class="loading">Carregando...</div>
-  </div>
+  
+  <div id="status" class="status">Conectando ao broker...</div>
 </body>
 </html>
